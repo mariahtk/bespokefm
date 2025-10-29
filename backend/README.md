@@ -1,15 +1,21 @@
-# FastAPI Backend for Co-Working Financial Model
+# FastAPI Backend for Bespoke Financial Model
 
 ## Setup Instructions
 
-### 1. Install Python Dependencies
+### 1. Add Template File
+
+**IMPORTANT**: Place the `Bespoke Model - US - v2.xlsm` template file in the `backend/` directory.
+
+The backend requires this template file to generate the output models.
+
+### 2. Install Python Dependencies
 
 \`\`\`bash
 cd backend
 pip install -r requirements.txt
 \`\`\`
 
-### 2. Run the FastAPI Server
+### 3. Run the FastAPI Server
 
 \`\`\`bash
 python main.py
@@ -17,7 +23,7 @@ python main.py
 
 The API will be available at `http://localhost:8000`
 
-### 3. Configure Next.js Environment Variable
+### 4. Configure Next.js Environment Variable
 
 Create a `.env.local` file in the root directory:
 
@@ -27,25 +33,33 @@ FASTAPI_URL=http://localhost:8000
 
 ## API Endpoints
 
-- `GET /` - Health check
-- `POST /api/process` - Upload and process Excel/CSV file
-- `GET /api/download/{filename}` - Download generated Excel file
+- `GET /` - Health check (shows if template file exists)
+- `POST /api/process` - Upload and process Bespoke Input Sheet
+- `GET /api/download/{filename}` - Download generated model file
 
 ## Input File Format
 
-Your Excel/CSV file should contain the following columns:
+Upload a **Bespoke Input Sheet** (.xlsx or .xlsm) with a "Sales Team Input Sheet" worksheet containing:
 
-- **Building Address** - Full address of the property
-- **Square Footage** - Total square footage
-- **Floor Count** - Number of floors
-- **Annual Revenue** - Base annual revenue
-- **Annual Expenses** - Base annual expenses
-- **Growth Rate** - Expected annual growth rate (e.g., 0.05 for 5%)
+- **F7** - Building Address
+- **F9** - Additional Info
+- **F13** - Latitude
+- **F15** - Longitude
+- **F23** - Brand
+- **F29** - Square Footage
+- **F37** - Market Rent
+- **F54** - Yes/No Value
+- **F56** - Number of Floors
 
 ## Output
 
-The API generates a comprehensive Excel file with three sheets:
+The API generates a completed **Bespoke Model - US - v2** file with:
 
-1. **Building Info** - Property details
-2. **10-Year Projections** - Year-by-year financial projections
-3. **Summary** - Aggregate metrics and ROI calculations
+- Building address mapped to E6
+- Coordinates mapped to E12 and E14
+- Square footage mapped to E34
+- Market rent logic mapped to K10
+- Yes/No value mapped to K34
+- Floor count mapped to K36
+
+The output filename will be: `Bespoke Model - US - v2_{timestamp}.xlsm`
