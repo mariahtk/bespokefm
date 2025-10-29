@@ -129,12 +129,15 @@ async def process_file(file: UploadFile = File(...)):
     Process uploaded Excel/CSV file and return financial projections
     """
     try:
-        # Validate file type
         if not file.filename:
             raise HTTPException(status_code=400, detail="No filename provided")
             
-        if not file.filename.endswith(('.xlsx', '.xls', '.csv')):
-            raise HTTPException(status_code=400, detail="Invalid file type. Please upload Excel (.xlsx, .xls) or CSV file.")
+        valid_extensions = ('.xlsx', '.xls', '.xlsm', '.xlsb', '.xltx', '.xltm', '.csv')
+        if not file.filename.lower().endswith(valid_extensions):
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid file type. Please upload an Excel file (.xlsx, .xls, .xlsm, .xlsb, .xltx, .xltm) or CSV file."
+            )
         
         logger.info(f"Processing file: {file.filename}")
         
@@ -144,12 +147,13 @@ async def process_file(file: UploadFile = File(...)):
         if len(contents) == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
         
-        # Parse based on file type
         try:
-            if file.filename.endswith('.csv'):
+            if file.filename.lower().endswith('.csv'):
                 data = pd.read_csv(io.BytesIO(contents))
             else:
-                data = pd.read_excel(io.BytesIO(contents))
+                # openpyxl handles .xlsx, .xlsm, .xltx, .xltm
+                # xlrd handles .xls, .xlsb (older formats)
+                data = pd.read_excel(io.BytesIO(contents), engine=None)  # Auto-detect engine
         except Exception as e:
             logger.error(f"Error reading file: {str(e)}")
             raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")

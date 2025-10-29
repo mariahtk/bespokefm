@@ -32,13 +32,21 @@ export function FileUploadSection({ onProcessComplete, onProcessStart }: FileUpl
 
   const validateFile = (file: File): boolean => {
     const validTypes = [
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+      "application/vnd.ms-excel", // .xls
+      "application/vnd.ms-excel.sheet.macroEnabled.12", // .xlsm
+      "application/vnd.ms-excel.sheet.binary.macroEnabled.12", // .xlsb
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.template", // .xltx
+      "application/vnd.ms-excel.template.macroEnabled.12", // .xltm
       "text/csv",
     ]
 
-    if (!validTypes.includes(file.type)) {
-      setError("Please upload a valid Excel file (.xlsx, .xls) or CSV file")
+    const fileName = file.name.toLowerCase()
+    const validExtensions = [".xlsx", ".xls", ".xlsm", ".xlsb", ".xltx", ".xltm", ".csv"]
+    const hasValidExtension = validExtensions.some((ext) => fileName.endsWith(ext))
+
+    if (!validTypes.includes(file.type) && !hasValidExtension) {
+      setError("Please upload a valid Excel file (.xlsx, .xls, .xlsm, .xlsb) or CSV file")
       return false
     }
 
@@ -159,7 +167,7 @@ export function FileUploadSection({ onProcessComplete, onProcessStart }: FileUpl
               type="file"
               id="file-upload"
               className="sr-only"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx,.xls,.xlsm,.xlsb,.xltx,.xltm,.csv"
               onChange={handleFileSelect}
               disabled={isProcessing}
             />
@@ -175,7 +183,9 @@ export function FileUploadSection({ onProcessComplete, onProcessStart }: FileUpl
                   <p className="text-sm font-medium text-foreground">
                     Drag and drop your file here, or click to browse
                   </p>
-                  <p className="text-xs text-muted-foreground">Supports Excel (.xlsx, .xls) and CSV files up to 10MB</p>
+                  <p className="text-xs text-muted-foreground">
+                    Supports all Excel formats (.xlsx, .xls, .xlsm, .xlsb) and CSV files up to 10MB
+                  </p>
                 </div>
                 <Button asChild variant="outline" size="sm" disabled={isProcessing}>
                   <label htmlFor="file-upload" className="cursor-pointer">
