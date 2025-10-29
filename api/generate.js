@@ -3,9 +3,7 @@ import fs from "fs";
 import path from "path";
 
 export const config = {
-  api: {
-    bodyParser: false, // We’ll handle file upload manually
-  },
+  api: { bodyParser: false },
 };
 
 export default async function handler(req, res) {
@@ -13,36 +11,26 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Only POST allowed" });
   }
 
-  try {
-    // 1️⃣ Save uploaded file to /tmp (Vercel’s temp folder)
-    const chunks = [];
-    req.on("data", (chunk) => chunks.push(chunk));
-    req.on("end", () => {
-      const buffer = Buffer.concat(chunks);
-      const uploadPath = path.join("/tmp", "input.xlsm");
-      fs.writeFileSync(uploadPath, buffer);
+  const chunks = [];
+  req.on("data", (chunk) => chunks.push(chunk));
+  req.on("end", () => {
+    const buffer = Buffer.concat(chunks);
+    const uploadPath = path.join("/tmp", "input.xlsm");
+    fs.writeFileSync(uploadPath, buffer);
 
-      // 2️⃣ Run Python script
-      const process = spawn("python3", ["backend.py", uploadPath], {
-        cwd: process.cwd(),
-      });
-
-      let output = "";
-      let error = "";
-
-      process.stdout.on("data", (data) => (output += data.toString()));
-      process.stderr.on("data", (data) => (error += data.toString()));
-
-      process.on("close", (code) => {
-        if (code === 0) {
-          res.status(200).json({ message: "✅ Model generated successfully", output });
-        } else {
-          res.status(500).json({ error: "❌ Python failed", details: error });
-        }
-      });
+    const process = spawn("python3", ["backend.py", uploadPath], {
+      cwd: process.cwd(),
     });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error", details: err.message });
-  }
+
+    let output = "";
+    let error = "";
+
+    process.stdout.on("data", (data) => (output += data.toString()));
+    process.stderr.on("data", (data) => (error += data.toString()));
+
+    process.on("close", (code) => {
+      if (code === 0) res.status(200).json({ message: output.trim() });
+      else res.status(500).json({ error: error || "Python process failed" });
+    });
+  });
 }
