@@ -1,107 +1,85 @@
 import os
 import re
 import shutil
-import tempfile
-import subprocess
-import win32com.client as win32
-from fastapi import FastAPI, UploadFile, Form
-from fastapi.responses import FileResponse
+from openpyxl import load_workbook
 
-# --- CONFIG: private GitHub repo ---
-GITHUB_REPO = "https://github.com/username/private-model-repo.git"
-GITHUB_PAT = "<YOUR_PERSONAL_ACCESS_TOKEN>"  # read-only is fine
-MODEL_FILENAME_IN_REPO = "Bespoke Model - US - v2.xlsm"
+def generate_model(input_path):
+    base_dir = os.path.dirname(input_path)
 
-app = FastAPI()
+    # --- Find model file ---
+    model_file = os.path.join(base_dir, "Scripts and Models", "Bespoke Model - US - v2.xlsm")
+    if not os.path.exists(model_file):
+        raise FileNotFoundError("❌ Model file not found.")
 
-def get_latest_model(tmp_dir):
-    """
-    Clone or pull the latest private repo and return path to the model file.
-    """
-    repo_path = os.path.join(tmp_dir, "repo")
-    
-    repo_url = GITHUB_REPO.replace("https://", f"https://{GITHUB_PAT}@")
-    
-    if os.path.exists(repo_path):
-        # If repo exists, pull latest changes
-        subprocess.run(["git", "-C", repo_path, "pull"], check=True)
-    else:
-        subprocess.run(["git", "clone", repo_url, repo_path], check=True)
-    
-    return os.path.join(repo_path, MODEL_FILENAME_IN_REPO)
+    # --- Open input workbook ---
+    wb_input = load_workbook(input_path, data_only=True)
+    ws_input = wb_input["Sales Team Input Sheet"]
 
+    # --- Read values from the input sheet ---
+    def get_value(cell):
+        val = ws_input[cell].value
+        return str(val).strip() if val else ""
 
-@app.post("/generate-model/")
-async def generate_model(
-    file: UploadFile,
-    address_raw: str = Form(...),
-    additional_info: str = Form(...),
-    latitude: float = Form(...),
-    longitude: float = Form(...),
-    sqft: float = Form(...),
-    market_rent: float = Form(...),
-    yes_no_value: str = Form(...),
-    num_floors: int = Form(...),
-):
-    try:
-        tmp_dir = tempfile.mkdtemp()
+    address_raw = get_value("F7")
+    additional_info = get_value("F9")
+    latitude = ws_input["F13"].value
+    longitude = ws_input["F15"].value
+    sqft = ws_input["F29"].value
+    market_rent = ws_input["F37"].value
+    yes_no_value = get_value("F54")
+    num_floors = ws_input["F56"].value
 
-        # Save uploaded input workbook
-        input_file_path = os.path.join(tmp_dir, file.filename)
-        with open(input_file_path, "wb") as f:
-            f.write(await file.read())
+    if not address_raw:
+        raise ValueError("Address in F7 is empty. Please fill it in.")
 
-        # Pull latest model from private GitHub
-        model_file_path = get_latest_model(tmp_dir)
+    address_clean = address_raw.replace("Dr", "Drive").replace("Blvd", "Boulevard")
 
-        # Copy model to temp dir
-        model_filename_clean = f"{address_raw.replace(' ', '_')}.xlsm"
-        working_model_path = os.path.join(tmp_dir, model_filename_clean)
-        shutil.copy2(model_file_path, working_model_path)
+    folder_name = f"{address_clean} {additional_info}"
+    invalid_chars = '<>:"/\\|?*'
+    for ch in invalid_chars:
+        folder_name = folder_name.replace(ch, "_")
 
-        # Start Excel
-        excel = win32.Dispatch("Excel.Application")
-        excel.Visible = False
-        excel.DisplayAlerts = False
+    new_folder = os.path.join(base_dir, folder_name)
+    os.makedirs(new_folder, exist_ok=True)
 
-        # Open input workbook
-        wb_input = excel.Workbooks.Open(input_file_path)
-        ws_input = wb_input.Worksheets("Sales Team Input Sheet")
+    # --- Copy model workbook ---
+    model_filename = "".join("_" if ch in invalid_chars else ch for ch in address_clean)
+    new_file = os.path.join(new_folder, f"{model_filename}.xlsm")
+    shutil.copy2(model_file, new_file)
 
-        # --- Original Excel logic ---
-        address_clean = address_raw.replace("Dr", "Drive").replace("Blvd", "Boulevard")
-        wb_model = excel.Workbooks.Open(working_model_path)
-        ws_model = wb_model.Worksheets("Sales Team Input Sheet")
+    # --- Open the model workbook ---
+    wb_model = load_workbook(new_file)
+    ws_model = wb_model["Sales Team Input Sheet"]
 
-        ws_model.Range("E6").Value = address_clean
-        ws_model.Range("E12").Value = latitude
-        ws_model.Range("E14").Value = longitude
-        if sqft is not None:
-            ws_model.Range("E34").Value = sqft
+    # --- Write values ---
+    ws_model["E6"].value = address_clean
+    ws_model["E12"].value = latitude
+    ws_model["E14"].value = longitude
+    ws_model["E34"].value = sqft
 
-        # Market rent dropdown logic
+    # --- Handle market rent (dropdown logic) ---
+    if market_rent:
         try:
-            market_rent_float = float(market_rent)
-            if market_rent_float == 15:
-                ws_model.Range("K10").Value = "15 - 20"
-            elif market_rent_float == 20:
-                ws_model.Range("K10").Value = "20 - 25"
+            val = float(market_rent)
+            if val == 15:
+                ws_model["K10"].value = "15 - 20"
+            elif val == 20:
+                ws_model["K10"].value = "20 - 25"
             else:
-                ws_model.Range("K10").Value = market_rent
-        except ValueError:
-            ws_model.Range("K10").Value = market_rent
+                ws_model["K10"].value = str(market_rent)
+        except Exception:
+            ws_model["K10"].value = str(market_rent)
 
-        if yes_no_value:
-            ws_model.Range("K34").Value = yes_no_value.strip()
-        if num_floors:
-            ws_model.Range("K36").Value = num_floors
+    ws_model["K34"].value = yes_no_value
+    ws_model["K36"].value = num_floors
 
-        wb_model.Save()
-        wb_model.Close(SaveChanges=True)
-        wb_input.Close(SaveChanges=False)
-        excel.Quit()
+    # --- Save ---
+    wb_model.save(new_file)
+    return new_file
 
-        return FileResponse(working_model_path, filename=model_filename_clean)
 
-    except Exception as e:
-        return {"error": str(e)}
+if __name__ == "__main__":
+    import sys
+    input_path = sys.argv[1]
+    output_path = generate_model(input_path)
+    print(f"✅ Model generated successfully: {output_path}")
