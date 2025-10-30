@@ -27,11 +27,24 @@ app.add_middleware(
 # Path to the template model file
 TEMPLATE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "Bespoke Model - US - v2.xlsm")
 
+@app.on_event("startup")
+async def startup_event():
+    """Check template file on startup"""
+    logger.info(f"Backend starting up...")
+    logger.info(f"Looking for template at: {TEMPLATE_MODEL_PATH}")
+    logger.info(f"Template exists: {os.path.exists(TEMPLATE_MODEL_PATH)}")
+    if os.path.exists(TEMPLATE_MODEL_PATH):
+        logger.info(f"Template file size: {os.path.getsize(TEMPLATE_MODEL_PATH)} bytes")
+    else:
+        logger.warning(f"⚠️ Template file not found! Please add 'Bespoke Model - US - v2.xlsm' to the backend directory")
+
 def process_bespoke_model(input_file_bytes: bytes) -> bytes:
     """
     Process the Bespoke Input Sheet and generate the output model
     """
     try:
+        logger.info(f"[v0] Starting to process input file ({len(input_file_bytes)} bytes)")
+        
         # Check if template exists
         if not os.path.exists(TEMPLATE_MODEL_PATH):
             raise FileNotFoundError(
@@ -39,14 +52,17 @@ def process_bespoke_model(input_file_bytes: bytes) -> bytes:
                 "Please add the template file to the backend directory."
             )
         
+        logger.info(f"[v0] Loading input workbook...")
         # Load the input workbook
-        input_wb = load_workbook(io.BytesIO(input_file_bytes), keep_vba=True)
+        input_wb = load_workbook(io.BytesIO(input_file_bytes), keep_vba=True, data_only=True)
         
         # Check if the required sheet exists
         if "Sales Team Input Sheet" not in input_wb.sheetnames:
+            logger.error(f"[v0] Available sheets: {input_wb.sheetnames}")
             raise ValueError("Input file must contain a 'Sales Team Input Sheet' worksheet")
         
         ws_input = input_wb["Sales Team Input Sheet"]
+        logger.info(f"[v0] Reading values from input sheet...")
         
         # Read values from the input sheet
         address_raw = str(ws_input["F7"].value or "").strip()
@@ -59,20 +75,26 @@ def process_bespoke_model(input_file_bytes: bytes) -> bytes:
         yes_no_value = ws_input["F54"].value
         num_floors = ws_input["F56"].value
         
+        logger.info(f"[v0] Read address: {address_raw}")
+        logger.info(f"[v0] Read sqft: {sqft}, market_rent: {market_rent}, floors: {num_floors}")
+        
         if not address_raw:
             raise ValueError("Address in cell F7 is empty. Please fill it in.")
         
         # Replace "Dr" → "Drive" and "Blvd" → "Boulevard" for model workbook
         address_clean = address_raw.replace("Dr", "Drive").replace("Blvd", "Boulevard")
         
+        logger.info(f"[v0] Loading template model from {TEMPLATE_MODEL_PATH}...")
         # Load the template model workbook
         model_wb = load_workbook(TEMPLATE_MODEL_PATH, keep_vba=True)
         
         # Check if the required sheet exists in the model
         if "Sales Team Input Sheet" not in model_wb.sheetnames:
+            logger.error(f"[v0] Available sheets in template: {model_wb.sheetnames}")
             raise ValueError("Template file must contain a 'Sales Team Input Sheet' worksheet")
         
         ws_model = model_wb["Sales Team Input Sheet"]
+        logger.info(f"[v0] Updating model with input data...")
         
         # Update building address
         ws_model["E6"] = address_clean
@@ -108,6 +130,7 @@ def process_bespoke_model(input_file_bytes: bytes) -> bytes:
         if num_floors is not None:
             ws_model["K36"] = num_floors
         
+        logger.info(f"[v0] Saving modified workbook...")
         # Save the modified workbook to bytes
         output = io.BytesIO()
         model_wb.save(output)
@@ -117,12 +140,12 @@ def process_bespoke_model(input_file_bytes: bytes) -> bytes:
         input_wb.close()
         model_wb.close()
         
-        logger.info(f"Successfully processed input file with address: {address_clean}")
+        logger.info(f"[v0] Successfully processed input file with address: {address_clean}")
         
         return output.getvalue()
     
     except Exception as e:
-        logger.error(f"Error in process_bespoke_model: {str(e)}")
+        logger.error(f"[v0] Error in process_bespoke_model: {str(e)}")
         raise
 
 @app.get("/")
@@ -150,7 +173,7 @@ async def process_file(file: UploadFile = File(...)):
                 detail="Invalid file type. Please upload a Bespoke Input Sheet (.xlsx or .xlsm)"
             )
         
-        logger.info(f"Processing file: {file.filename}")
+        logger.info(f"[v0] Processing file: {file.filename}")
         
         # Read the uploaded file
         contents = await file.read()
@@ -158,15 +181,19 @@ async def process_file(file: UploadFile = File(...)):
         if len(contents) == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
         
+        logger.info(f"[v0] File size: {len(contents)} bytes")
+        
         # Process the file
         try:
             output_bytes = process_bespoke_model(contents)
         except FileNotFoundError as e:
+            logger.error(f"[v0] Template file not found: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
         except ValueError as e:
+            logger.error(f"[v0] Validation error: {str(e)}")
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            logger.error(f"Error processing file: {str(e)}")
+            logger.error(f"[v0] Error processing file: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
         
         # Save to temporary file
@@ -177,7 +204,7 @@ async def process_file(file: UploadFile = File(...)):
         with open(output_path, 'wb') as f:
             f.write(output_bytes)
         
-        logger.info(f"Successfully generated model: {output_filename}")
+        logger.info(f"[v0] Successfully generated model: {output_filename} ({len(output_bytes)} bytes)")
         
         # Return success response
         return {
@@ -189,7 +216,7 @@ async def process_file(file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Unexpected error processing file: {str(e)}")
+        logger.error(f"[v0] Unexpected error processing file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @app.get("/api/download/{filename}")
