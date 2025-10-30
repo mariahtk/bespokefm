@@ -97,22 +97,44 @@ export function FileUploadSection({ onProcessComplete, onProcessStart }: FileUpl
       const formData = new FormData()
       formData.append("file", file)
 
+      console.log("[v0] Sending file to API for processing...")
+
       const response = await fetch("/api/process", {
         method: "POST",
         body: formData,
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || "Failed to process file")
+        const contentType = response.headers.get("content-type")
+        if (contentType && contentType.includes("application/json")) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || "Failed to process file")
+        } else {
+          throw new Error("Failed to process file")
+        }
       }
 
-      const results = await response.json()
-      console.log("[v0] Processing complete:", results)
+      const blob = await response.blob()
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5)
+      const filename = `Bespoke Model - US - v2_${timestamp}.xlsm`
 
-      // Pass results to parent component
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      window.URL.revokeObjectURL(url)
+      document.body.removeChild(a)
+
+      console.log("[v0] File downloaded successfully:", filename)
+
+      setUploadSuccess(true)
+
+      // Pass success to parent component
       if (onProcessComplete) {
-        onProcessComplete(results)
+        onProcessComplete({ success: true, filename })
       }
     } catch (err) {
       console.error("[v0] Error processing file:", err)

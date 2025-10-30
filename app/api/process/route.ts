@@ -93,15 +93,16 @@ export async function POST(request: NextRequest) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5)
     const outputFilename = `Bespoke Model - US - v2_${timestamp}.xlsm`
 
-    // Save to buffer
     const outputBuffer = await templateWorkbook.xlsx.writeBuffer()
 
     console.log("[v0] Success! Generated file:", outputFilename)
 
-    return NextResponse.json({
-      success: true,
-      download_filename: outputFilename,
-      message: "File processed successfully",
+    return new NextResponse(outputBuffer, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.ms-excel.sheet.macroEnabled.12",
+        "Content-Disposition": `attachment; filename="${outputFilename}"`,
+      },
     })
   } catch (error) {
     console.error("[v0] API route: Error processing file:", error)
