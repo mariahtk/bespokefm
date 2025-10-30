@@ -104,17 +104,27 @@ export function FileUploadSection({ onProcessComplete, onProcessStart }: FileUpl
         body: formData,
       })
 
+      console.log("[v0] Response status:", response.status)
+      console.log("[v0] Response headers:", Object.fromEntries(response.headers.entries()))
+
       if (!response.ok) {
         const contentType = response.headers.get("content-type")
         if (contentType && contentType.includes("application/json")) {
           const errorData = await response.json()
-          throw new Error(errorData.error || "Failed to process file")
+          console.error("[v0] Error response:", errorData)
+          throw new Error(errorData.error || errorData.details || "Failed to process file")
         } else {
+          const text = await response.text()
+          console.error("[v0] Error response text:", text)
           throw new Error("Failed to process file")
         }
       }
 
+      console.log("[v0] Processing successful, downloading file...")
+
       const blob = await response.blob()
+      console.log("[v0] Blob size:", blob.size, "Type:", blob.type)
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5)
       const filename = `Bespoke Model - US - v2_${timestamp}.xlsm`
 

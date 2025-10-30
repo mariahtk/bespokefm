@@ -5,7 +5,8 @@ import fs from "fs"
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("[v0] API route: Receiving file upload request")
+    console.log("[v0] API route: Starting file processing")
+    console.log("[v0] Current working directory:", process.cwd())
 
     const formData = await request.formData()
     const file = formData.get("file") as File
@@ -17,13 +18,27 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] API route: File received:", file.name, "Size:", file.size, "bytes")
 
-    const arrayBuffer = await file.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
+    let buffer: Buffer
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      buffer = Buffer.from(arrayBuffer)
+      console.log("[v0] Buffer created successfully, size:", buffer.length)
+    } catch (error) {
+      console.error("[v0] Error creating buffer:", error)
+      throw new Error("Failed to read uploaded file")
+    }
 
-    // Load the input workbook
-    const inputWorkbook = new ExcelJS.Workbook()
-    await inputWorkbook.xlsx.load(buffer)
-    const inputSheet = inputWorkbook.worksheets[0]
+    let inputWorkbook: ExcelJS.Workbook
+    let inputSheet: ExcelJS.Worksheet
+    try {
+      inputWorkbook = new ExcelJS.Workbook()
+      await inputWorkbook.xlsx.load(buffer)
+      inputSheet = inputWorkbook.worksheets[0]
+      console.log("[v0] Input workbook loaded, sheet name:", inputSheet.name)
+    } catch (error) {
+      console.error("[v0] Error loading input workbook:", error)
+      throw new Error("Failed to read input Excel file. Make sure it's a valid Excel file.")
+    }
 
     console.log("[v0] Reading input values from cells...")
 
@@ -48,15 +63,30 @@ export async function POST(request: NextRequest) {
       numFloors,
     })
 
-    // Load the template model
-    const templatePath = path.join(process.cwd(), "backend", "Bespoke Model - US - v2.xlsm")
+    const possiblePaths = [
+      path.join(process.cwd(), "backend", "Bespoke Model - US - v2.xlsm"),
+      path.join(process.cwd(), "Bespoke Model - US - v2.xlsm"),
+      path.join(__dirname, "..", "..", "..", "backend", "Bespoke Model - US - v2.xlsm"),
+    ]
 
-    if (!fs.existsSync(templatePath)) {
-      console.error("[v0] Template file not found at:", templatePath)
+    console.log("[v0] Checking for template file in possible locations:")
+    let templatePath: string | null = null
+    for (const p of possiblePaths) {
+      console.log("[v0] Checking:", p, "Exists:", fs.existsSync(p))
+      if (fs.existsSync(p)) {
+        templatePath = p
+        break
+      }
+    }
+
+    if (!templatePath) {
+      console.error("[v0] Template file not found in any location")
+      console.error("[v0] Checked paths:", possiblePaths)
       return NextResponse.json(
         {
           error: "Template file not found",
           details: "Bespoke Model - US - v2.xlsm must be in the backend folder",
+          checkedPaths: possiblePaths,
         },
         { status: 500 },
       )
@@ -64,9 +94,17 @@ export async function POST(request: NextRequest) {
 
     console.log("[v0] Loading template from:", templatePath)
 
-    const templateWorkbook = new ExcelJS.Workbook()
-    await templateWorkbook.xlsx.readFile(templatePath)
-    const outputSheet = templateWorkbook.worksheets[0]
+    let templateWorkbook: ExcelJS.Workbook
+    let outputSheet: ExcelJS.Worksheet
+    try {
+      templateWorkbook = new ExcelJS.Workbook()
+      await templateWorkbook.xlsx.readFile(templatePath)
+      outputSheet = templateWorkbook.worksheets[0]
+      console.log("[v0] Template loaded successfully, sheet name:", outputSheet.name)
+    } catch (error) {
+      console.error("[v0] Error loading template:", error)
+      throw new Error("Failed to load template file. The file may be corrupted or in an unsupported format.")
+    }
 
     console.log("[v0] Mapping values to output cells...")
 
@@ -93,7 +131,14 @@ export async function POST(request: NextRequest) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, -5)
     const outputFilename = `Bespoke Model - US - v2_${timestamp}.xlsm`
 
-    const outputBuffer = await templateWorkbook.xlsx.writeBuffer()
+    let outputBuffer: Buffer
+    try {
+      outputBuffer = (await templateWorkbook.xlsx.writeBuffer()) as Buffer
+      console.log("[v0] Output buffer created, size:", outputBuffer.length)
+    } catch (error) {
+      console.error("[v0] Error writing output file:", error)
+      throw new Error("Failed to generate output file")
+    }
 
     console.log("[v0] Success! Generated file:", outputFilename)
 
